@@ -92,7 +92,8 @@ class GetArticleClass(object):
             ArticleDownUrl = BeautifulSoup(Article.find_element(By.CLASS_NAME, 'gs_ggs.gs_fl').get_attribute('outerHTML'), features="lxml").find('a')['href']
         except:  # 使用SCI-HUB替代
             # TODO 可以尝试更多替代方式
-            ArticleDownUrl = 'https://sci-hub.se/%s' % ArticleDIO
+            ArticleDownUrl = self.getDownUrl_SCIHUB(ArticleDIO)
+        print(ArticleDownUrl)
         self.DownLoad(ArticleDownUrl, ArticleTitle)
 
         # 处理引用
@@ -108,6 +109,23 @@ class GetArticleClass(object):
 
         return ArticleDetails_List
 
+    def getDownUrl_SCIHUB(self, DIO):
+        """
+        从SCIHUB上搜索DIO，返回下载链接
+        :param DIO:
+        :return:
+        """
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36",
+            "Connection": "keep-alive",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.8"}
+        proxies = {'http': 'http://127.0.0.1:%s' % self.port, 'https': 'http://127.0.0.1:%s' % self.port}
+        response = requests.get('https://sci-hub.se/%s' % DIO, headers=headers, proxies=proxies)
+        p = re.compile('//.+(?=\?download)')
+        ArticleDownUrl = 'https:' + p.findall(BeautifulSoup(response.content, features="lxml").button['onclick'])[0]
+        return ArticleDownUrl
+
     def DownLoad(self, ArticleDownUrl, ArticleTitle):
         """
         将文件下载至保存目录，且以文章标题命名
@@ -115,13 +133,13 @@ class GetArticleClass(object):
         :param: ArticleTitle   文章标题将成为下载文件的名字
         :return: PDF文件
         """
-        send_headers = {
+        headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36",
             "Connection": "keep-alive",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "zh-CN,zh;q=0.8"}
         proxies = {'http': 'http://127.0.0.1:%s' % self.port, 'https': 'http://127.0.0.1:%s' % self.port}
-        response = requests.get(ArticleDownUrl, headers=send_headers, proxies=proxies)
+        response = requests.get(ArticleDownUrl, headers=headers, proxies=proxies, timeout=60)
         bytes_io = io.BytesIO(response.content)
         with open(self.savePath + "\\" + "%s.PDF" % ArticleTitle, mode='wb') as f:
             f.write(bytes_io.getvalue())
