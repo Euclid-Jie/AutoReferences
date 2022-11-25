@@ -11,7 +11,6 @@ from selenium.webdriver import Chrome, ChromeOptions  # 导入类库
 from selenium.webdriver.common.by import By
 import tkinter as tk
 from tkinter import filedialog
-from selenium.webdriver.support.wait import WebDriverWait
 
 
 def getLocalFile():
@@ -48,8 +47,8 @@ if __name__ == '__main__':
     option.add_argument("--proxy-server=http://{}:{}".format(ip, port))
     driver = Chrome(options=option)  # 模拟开浏览器
 
-    # filePath = getLocalFile()
-    df = pd.read_csv('OldRef.csv')
+    filePath = getLocalFile()
+    df = pd.read_csv(filePath)
     out_df = df.copy()
     for index in df.index:
         refi = df.iloc[index].values[0]
