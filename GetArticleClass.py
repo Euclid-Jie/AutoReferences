@@ -10,8 +10,8 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 from selenium.webdriver.support.wait import WebDriverWait
 from time import sleep
-import io
 import requests
+from tqdm import tqdm
 
 
 class GetArticleClass(object):
@@ -21,18 +21,18 @@ class GetArticleClass(object):
     同步下载谷歌学术的GB/T 7714格式引文
     """
 
-    def __init__(self, pageNums, Keywords, savePath):
+    def __init__(self, pageNums, Keywords, fileName):
         """
         :param pageNums: 需要获取的页数 int
         :param Keywords: 搜索框的关键词 str
-        :param savePath: 下载文件保存的文件夹路径, 例如'D:\Euclid_Jie\AutoReferences'
+        :param fileName: 保存文件的名称 str 例如'Euclid'
         """
         self.port = None
         self.Url = None
         self.driver = None
         self.pageNums = pageNums
         self.Keywords = Keywords
-        self.savePath = savePath
+        self.fileName = fileName
 
     def GetDriver(self, port):
         """
@@ -55,14 +55,13 @@ class GetArticleClass(object):
         """
         self.driver.get(self.Url)  # 跳转该页文章
         ArticleList = self.driver.find_elements(By.CLASS_NAME, 'gs_r.gs_or.gs_scl')
-        Articles_df = pd.DataFrame({'ArticleTitle': [], 'ArticleURL': [], 'ArticleDIO': [], 'ArticleRef': []})
+
         for Article in ArticleList:
             ArticleDetails_List = self.GetArticleDetails(Article)
             Article_df = pd.DataFrame({'ArticleTitle': [ArticleDetails_List[0]], 'ArticleURL': [ArticleDetails_List[1]],
-                                       'ArticleDIO': [ArticleDetails_List[2]], 'ArticleRef': [ArticleDetails_List[3]]})
-            Articles_df = pd.concat([Articles_df, Article_df])
-
-        return Articles_df.reset_index(drop=True)
+                                       'ArticleDownUrl': [ArticleDetails_List[2]], 'ArticleDownUrl0': [ArticleDetails_List[3]],
+                                       'ArticleDIO': [ArticleDetails_List[4]], 'ArticleRef': [ArticleDetails_List[5]]})
+            Article_df.to_csv('%s.csv' % self.fileName, index=False, header=False, mode='a', encoding='utf-8-sig')
 
     def GetArticleDetails(self, Article):
         """
@@ -71,6 +70,8 @@ class GetArticleClass(object):
         :return: ArticleDetails_List具体包括：
                 ArticleTitle: 文章标题
                 ArticleURL: 文章首页
+                ArticleDownUrl: SCIHUB下载链接
+                ArticleDownUrl0: 谷歌学术下载链接
                 ArticleDIO: 文章的DIO
                 ArticleRef: 文章的引文格式
         """
@@ -84,17 +85,23 @@ class GetArticleClass(object):
             ArticleDIO = p.findall(BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").a['href'])[0]
         except:
             print('DIO提取报错')
-            ArticleDIO = '缺失'
+            ArticleDIO = ''
 
-        # 获取PDF链接，并下载
+        # 获取PDF链接
         ## 自带PDF链接
         try:
-            ArticleDownUrl = BeautifulSoup(Article.find_element(By.CLASS_NAME, 'gs_ggs.gs_fl').get_attribute('outerHTML'), features="lxml").find('a')['href']
-        except:  # 使用SCI-HUB替代
-            # TODO 可以尝试更多替代方式
+            ArticleDownUrl0 = BeautifulSoup(Article.find_element(By.CLASS_NAME, 'gs_ggs.gs_fl').get_attribute('outerHTML'), features="lxml").find('a')['href']
+        except:
+            if ArticleDIO == '':
+                ArticleDownUrl0 = ''
+            else:
+                ArticleDownUrl0 = 'https://cdn1.booksdl.org/index.php?req=' + ArticleDIO
+
+        ## SCIHUB下载链接
+        if ArticleDIO == '':
+            ArticleDownUrl = ''
+        else:
             ArticleDownUrl = self.getDownUrl_SCIHUB(ArticleDIO)
-        print(ArticleDownUrl)
-        self.DownLoad(ArticleDownUrl, ArticleTitle)
 
         # 处理引用
         sleep(0.5)
@@ -104,8 +111,11 @@ class GetArticleClass(object):
         ArticleRef = soup.text.split('GB/T 7714')[1]
         # 关闭引用
         sleep(0.5)
-        self.driver.find_elements(By.XPATH, '//*[@id="gs_cit-x"]/span[1]')[0].click()
-        ArticleDetails_List = [ArticleTitle, ArticleURL, ArticleDIO, ArticleRef]
+        try:
+            self.driver.find_elements(By.XPATH, '//*[@id="gs_cit-x"]/span[1]')[0].click()
+        except:
+            pass
+        ArticleDetails_List = [ArticleTitle, ArticleURL, ArticleDownUrl, ArticleDownUrl0, ArticleDIO, ArticleRef]
 
         return ArticleDetails_List
 
@@ -123,38 +133,29 @@ class GetArticleClass(object):
         proxies = {'http': 'http://127.0.0.1:%s' % self.port, 'https': 'http://127.0.0.1:%s' % self.port}
         response = requests.get('https://sci-hub.se/%s' % DIO, headers=headers, proxies=proxies)
         p = re.compile('//.+(?=\?download)')
-        ArticleDownUrl = 'https:' + p.findall(BeautifulSoup(response.content, features="lxml").button['onclick'])[0]
+        try:
+            ArticleDownUrl = 'https:' + p.findall(BeautifulSoup(response.content, features="lxml").button['onclick'])[0]
+        except:
+            ArticleDownUrl = 'https://sci-hub.se/%s' % DIO
         return ArticleDownUrl
 
-    def DownLoad(self, ArticleDownUrl, ArticleTitle):
-        """
-        将文件下载至保存目录，且以文章标题命名
-        :param: ArticleDownUrl 以pdf结尾的Url
-        :param: ArticleTitle   文章标题将成为下载文件的名字
-        :return: PDF文件
-        """
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36",
-            "Connection": "keep-alive",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.8"}
-        proxies = {'http': 'http://127.0.0.1:%s' % self.port, 'https': 'http://127.0.0.1:%s' % self.port}
-        response = requests.get(ArticleDownUrl, headers=headers, proxies=proxies, timeout=60)
-        bytes_io = io.BytesIO(response.content)
-        with open(self.savePath + "\\" + "%s.PDF" % ArticleTitle, mode='wb') as f:
-            f.write(bytes_io.getvalue())
-            print('%s.PDF,下载成功！' % ArticleTitle)
-
     def MainGet(self):
-        self.GetDriver('3948')
-        ArticleDetails_df = pd.DataFrame({'ArticleTitle': [], 'ArticleURL': [], 'ArticleDIO': [], 'ArticleRef': []})
-        for page in range(self.pageNums):
+        self.GetDriver('12345')
+        ArticleDetails_df = pd.DataFrame({'ArticleTitle': [], 'ArticleURL': [], 'ArticleDownUrl': [],
+                                          'ArticleDownUrl0': [], 'ArticleDIO': [], 'ArticleRef': []})
+        try:
+            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=False, mode = 'a', encoding='utf-8-sig')
+        except:
+            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=True, mode = 'w', encoding='utf-8-sig')
+
+        for page in tqdm(range(self.pageNums)):
             self.Url = f"https://scholar.google.com.hk/scholar?start={page * 10}&q={self.Keywords}&hl=zh-CN&as_sdt=0,5"
-            Articles_df = self.GetArticles_df()
-            ArticleDetails_df = pd.concat([ArticleDetails_df, Articles_df])
-        ArticleDetails_df = ArticleDetails_df.reset_index(drop=True)
-        ArticleDetails_df.to_csv('%s.csv' % self.Keywords, index=False, encoding='utf-8-sig')
+            self.GetArticles_df()
+
 
 
 if __name__ == '__main__':
-    GetArticleClass(1, 'Academy+of+Management+Journal', 'D:\Euclid_Jie\AutoReferences\PDF').MainGet()
+    # GetArticleClass(26, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Academy of Management Journal"',
+    #                 'AcademyOfManagementJournal').MainGet()
+    # 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Journal of Applied Psychology"'
+    GetArticleClass(16, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Human Relations"', 'HumanRelations').MainGet()
