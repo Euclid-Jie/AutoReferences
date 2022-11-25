@@ -8,7 +8,6 @@ import pandas as pd
 from selenium.webdriver import Chrome, ChromeOptions  # 导入类库
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
-from selenium.webdriver.support.wait import WebDriverWait
 from time import sleep
 import requests
 from tqdm import tqdm
@@ -21,7 +20,7 @@ class GetArticleClass(object):
     同步下载谷歌学术的GB/T 7714格式引文
     """
 
-    def __init__(self, pageNums, Keywords, fileName):
+    def __init__(self, begin, pageNums, Keywords, fileName):
         """
         :param pageNums: 需要获取的页数 int
         :param Keywords: 搜索框的关键词 str
@@ -30,6 +29,7 @@ class GetArticleClass(object):
         self.port = None
         self.Url = None
         self.driver = None
+        self.begin = begin
         self.pageNums = pageNums
         self.Keywords = Keywords
         self.fileName = fileName
@@ -140,22 +140,23 @@ class GetArticleClass(object):
         return ArticleDownUrl
 
     def MainGet(self):
+        # TODO 注意设置端口
         self.GetDriver('12345')
         ArticleDetails_df = pd.DataFrame({'ArticleTitle': [], 'ArticleURL': [], 'ArticleDownUrl': [],
                                           'ArticleDownUrl0': [], 'ArticleDIO': [], 'ArticleRef': []})
         try:
-            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=False, mode = 'a', encoding='utf-8-sig')
+            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=False, mode='a', encoding='utf-8-sig')
         except:
-            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=True, mode = 'w', encoding='utf-8-sig')
+            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=True, mode='w', encoding='utf-8-sig')
 
-        for page in tqdm(range(self.pageNums)):
+        for page in tqdm(range(self.begin, self.pageNums)):
+            # self.Url = f"https://sc.panda321.com/scholar?start={page * 10}&q={self.Keywords}&hl=zh-CN&as_sdt=0,5"
             self.Url = f"https://scholar.google.com.hk/scholar?start={page * 10}&q={self.Keywords}&hl=zh-CN&as_sdt=0,5"
             self.GetArticles_df()
-
+            sleep(3)
 
 
 if __name__ == '__main__':
-    # GetArticleClass(26, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Academy of Management Journal"',
-    #                 'AcademyOfManagementJournal').MainGet()
+    #  GetArticleClass(26, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Academy of Management Journal"','AcademyOfManagementJournal').MainGet()
     # 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Journal of Applied Psychology"'
-    GetArticleClass(16, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Human Relations"', 'HumanRelations').MainGet()
+    GetArticleClass(3, 16, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Human Relations"', 'HumanRelations').MainGet()
