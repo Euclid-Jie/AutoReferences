@@ -41,10 +41,7 @@ class GetArticleClass(object):
         """
         self.port = port
         option = ChromeOptions()  # 初始化浏览器设置
-        option.add_experimental_option("excludeSwitches", ['enable-automation', 'enable-logging'])  # 添加参数
-        ip = "127.0.0.1"
-        # 设置代理
-        option.add_argument("--proxy-server=http://{}:{}".format(ip, self.port))
+        option.add_experimental_option("debuggerAddress", "127.0.0.1:9222")  # 接管
         self.driver = Chrome(options=option)  # 模拟开浏览器
 
     def GetArticles_df(self):
@@ -52,7 +49,7 @@ class GetArticleClass(object):
         根据Url获取当前页面上所有Article的信息
         :return:
         """
-        self.driver.get(self.Url)  # 跳转该页文章
+        # self.driver.get(self.Url)  # 跳转该页文章
         ArticleList = self.driver.find_elements(By.CLASS_NAME, 'gs_r.gs_or.gs_scl')
 
         for Article in ArticleList:
@@ -76,7 +73,10 @@ class GetArticleClass(object):
         """
         # 文章名+文章首页
         ArticleTitle = BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").text
-        ArticleURL = BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").a['href']
+        try:
+            ArticleURL = BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").a['href']
+        except:
+            ArticleURL = ''
 
         # 文章DIO
         try:
@@ -150,12 +150,12 @@ class GetArticleClass(object):
 
         for page in tqdm(range(self.begin, self.pageNums)):
             # self.Url = f"https://sc.panda321.com/scholar?start={page * 10}&q={self.Keywords}&hl=zh-CN&as_sdt=0,5"
-            self.Url = f"https://scholar.google.com.hk/scholar?start={page * 10}&q={self.Keywords}&hl=zh-CN&as_sdt=0,5"
             self.GetArticles_df()
             sleep(3)
+            self.driver.find_elements(By.LINK_TEXT, "下一页")[0].click()
 
 
 if __name__ == '__main__':
-    #  GetArticleClass(26, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Academy of Management Journal"','AcademyOfManagementJournal').MainGet()
-    # 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Journal of Applied Psychology"'
-    GetArticleClass(3, 16, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Human Relations"', 'HumanRelations').MainGet()
+    # GetArticleClass(26, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Academy of Management Journal"',
+    # 'AcademyOfManagementJournal').MainGet() 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Journal of Applied Psychology"'
+    GetArticleClass(18, 100, 'allintitle: climate for change', 'climate for change').MainGet()
