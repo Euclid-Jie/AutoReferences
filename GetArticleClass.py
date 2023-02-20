@@ -2,6 +2,7 @@
 # @Time    : 2022/11/25 11:28
 # @Author  : Euclid-Jie
 # @File    : GetArticleClass.py
+import os
 import re
 import pandas as pd
 from selenium.webdriver import Chrome, ChromeOptions  # 导入类库
@@ -33,15 +34,14 @@ class GetArticleClass(object):
         self.Keywords = Keywords
         self.fileName = fileName
 
-    def GetDriver(self, port):
+    def GetDriver(self):
         """
-        新建一个浏览器窗口，需要指定代理端口
-        :param port: 代理的端口，从代理软件查看
+        新开一个chrome, 并打开谷歌学术网站 https://scholar.google.com, 如果不能访问, 请设置梯子
+        此函数实现Chrome的接管
         :return: self.driver
         """
-        self.port = port
         option = ChromeOptions()  # 初始化浏览器设置
-        option.add_experimental_option("debuggerAddress", "127.0.0.1:9222")  # 接管
+        option.add_experimental_option("debuggerAddress", "127.0.0.1:9223")  # 接管
         self.driver = Chrome(options=option)  # 模拟开浏览器
 
     def GetArticles_df(self):
@@ -49,15 +49,16 @@ class GetArticleClass(object):
         根据Url获取当前页面上所有Article的信息
         :return:
         """
-        # self.driver.get(self.Url)  # 跳转该页文章
         ArticleList = self.driver.find_elements(By.CLASS_NAME, 'gs_r.gs_or.gs_scl')
-
+        num = 0
         for Article in ArticleList:
             ArticleDetails_List = self.GetArticleDetails(Article)
-            Article_df = pd.DataFrame({'ArticleTitle': [ArticleDetails_List[0]], 'ArticleURL': [ArticleDetails_List[1]],
-                                       'ArticleDownUrl': [ArticleDetails_List[2]], 'ArticleDownUrl0': [ArticleDetails_List[3]],
-                                       'ArticleDIO': [ArticleDetails_List[4]], 'ArticleRef': [ArticleDetails_List[5]]})
+            Article_df = pd.DataFrame({'ArticleTitle': [ArticleDetails_List[0]], 'ArticleType': [ArticleDetails_List[1]], 'ArticleURL': [ArticleDetails_List[2]],
+                                       'ArticleDownUrl': [ArticleDetails_List[3]], 'ArticleDownUrl0': [ArticleDetails_List[4]],
+                                       'ArticleDIO': [ArticleDetails_List[5]], 'ArticleRef': [ArticleDetails_List[6]]})
             Article_df.to_csv('%s.csv' % self.fileName, index=False, header=False, mode='a', encoding='utf-8-sig')
+            num += 1
+            self.t.set_postfix({"状态": "已写num:{}".format(num)})  # 进度条右边显示信息
 
     def GetArticleDetails(self, Article):
         """
@@ -71,25 +72,43 @@ class GetArticleClass(object):
                 ArticleDIO: 文章的DIO
                 ArticleRef: 文章的引文格式
         """
-        # 文章名+文章首页
-        ArticleTitle = BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").text
+        # 图书, PDF
         try:
-            ArticleURL = BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").a['href']
+            ArticleType = Article.find_element(By.CLASS_NAME, 'gs_ct1').text
+        except:
+            ArticleType = ''
+
+        # 文章名+文章首页
+        ArticleTitle = Article.find_element(By.TAG_NAME, "h3").text.replace(ArticleType, '')
+
+        # url
+        try:
+            ArticleURL = Article.find_element(By.TAG_NAME, "h3").find_element(By.TAG_NAME, 'a').get_attribute('href')
         except:
             ArticleURL = ''
 
-        # 文章DIO
+        # 从href提取文章DIO, 目前考虑几种情况
+        # 1、https://www.emerald.com/insight/content/doi/10.1108/09534819910263668/full/html
+        # 2、https://www.tandfonline.com/doi/abs/10.1080/09557571.2018.1508203
+        # 3、https://journals.sagepub.com/doi/pdf/10.1177/0002764212463361
+        # 4、
         try:
             p = re.compile('\d+\.\d+/.+')
-            ArticleDIO = p.findall(BeautifulSoup(Article.find_element(By.TAG_NAME, 'h3').get_attribute('outerHTML'), features="lxml").a['href'])[0]
+            ArticleDIO = p.findall(ArticleURL)[0].replace('/full/html', '')
         except:
-            print('DIO提取报错')
             ArticleDIO = ''
 
         # 获取PDF链接
         ## 自带PDF链接
         try:
             ArticleDownUrl0 = BeautifulSoup(Article.find_element(By.CLASS_NAME, 'gs_ggs.gs_fl').get_attribute('outerHTML'), features="lxml").find('a')['href']
+            try:
+                p = re.compile('\d+\.\d+/.+')
+                ArticleDIO = p.findall(ArticleDownUrl0)[0].replace('/full/html', '')
+            except:
+                ArticleDIO = ''
+
+        ## 如果没有自带的, 使用DOI获取
         except:
             if ArticleDIO == '':
                 ArticleDownUrl0 = ''
@@ -114,7 +133,7 @@ class GetArticleClass(object):
             self.driver.find_elements(By.XPATH, '//*[@id="gs_cit-x"]/span[1]')[0].click()
         except:
             pass
-        ArticleDetails_List = [ArticleTitle, ArticleURL, ArticleDownUrl, ArticleDownUrl0, ArticleDIO, ArticleRef]
+        ArticleDetails_List = [ArticleTitle, ArticleType, ArticleURL, ArticleDownUrl, ArticleDownUrl0, ArticleDIO, ArticleRef]
 
         return ArticleDetails_List
 
@@ -126,10 +145,10 @@ class GetArticleClass(object):
         """
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36",
-            "Connection": "keep-alive",
+            # "Connection": "keep-alive",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "zh-CN,zh;q=0.8"}
-        proxies = {'http': 'http://127.0.0.1:%s' % self.port, 'https': 'http://127.0.0.1:%s' % self.port}
+        proxies = {'http': 'http://127.0.0.1:12345', 'https': 'http://127.0.0.1:12345'}
         response = requests.get('https://sci-hub.se/%s' % DIO, headers=headers, proxies=proxies)
         p = re.compile('//.+(?=\?download)')
         try:
@@ -139,23 +158,21 @@ class GetArticleClass(object):
         return ArticleDownUrl
 
     def MainGet(self):
-        # TODO 注意设置端口
-        self.GetDriver('12345')
-        ArticleDetails_df = pd.DataFrame({'ArticleTitle': [], 'ArticleURL': [], 'ArticleDownUrl': [],
+        self.GetDriver()
+        ArticleDetails_df = pd.DataFrame({'ArticleTitle': [], 'ArticleType': [], 'ArticleURL': [], 'ArticleDownUrl': [],
                                           'ArticleDownUrl0': [], 'ArticleDIO': [], 'ArticleRef': []})
-        try:
-            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=False, mode='a', encoding='utf-8-sig')
-        except:
-            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, header=True, mode='w', encoding='utf-8-sig')
-
-        for page in tqdm(range(self.begin, self.pageNums)):
-            # self.Url = f"https://sc.panda321.com/scholar?start={page * 10}&q={self.Keywords}&hl=zh-CN&as_sdt=0,5"
-            self.GetArticles_df()
-            sleep(3)
-            self.driver.find_elements(By.LINK_TEXT, "下一页")[0].click()
+        # 不存在文件则创建
+        if not os.path.exists('%s.csv' % self.fileName):
+            ArticleDetails_df.to_csv('%s.csv' % self.fileName, index=False, encoding='utf-8-sig')
+        with tqdm(range(self.begin, self.pageNums)) as self.t:
+            for page in self.t:
+                self.t.set_description("page:{}".format(page))  # 进度条左边显示信息
+                self.GetArticles_df()
+                sleep(3)
+                self.driver.find_elements(By.LINK_TEXT, "下一页")[0].click()
 
 
 if __name__ == '__main__':
     # GetArticleClass(26, 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Academy of Management Journal"',
     # 'AcademyOfManagementJournal').MainGet() 'SHRM OR "strategic HRM" OR "strategic HR" OR"strategic human resource management" AND source:"Journal of Applied Psychology"'
-    GetArticleClass(18, 100, 'allintitle: climate for change', 'climate for change').MainGet()
+    GetArticleClass(6, 100, 'allintitle: climate for change', 'climate for change_2').MainGet()
