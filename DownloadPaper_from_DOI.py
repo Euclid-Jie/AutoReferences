@@ -28,7 +28,7 @@ def Down_PDF_from_DOI(DOI):
     driver = Chrome(options=option)  # 模拟开浏览器
     Url = 'https://libgen.rocks/ads.php?doi=' + DOI
     driver.get(Url)
-    time.sleep(10)
+    time.sleep(5)
 
 
 def Down_PDF_from_pdfUrl(Url, filename, proxies):
